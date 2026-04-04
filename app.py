@@ -4,6 +4,10 @@ import plotly.express as px
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(page_title="Advanced Data Dashboard", layout="wide")
+st.title("📊 Advanced Data Explorer")
+
 # ---------------- CLEANING FUNCTION ----------------
 def clean_data(df):
     df = df.copy()
@@ -14,57 +18,34 @@ def clean_data(df):
         pd.NA
     )
 
-    # ---------------- TRIM TEXT ----------------
+    # Trim text
     for col in df.select_dtypes(include='object').columns:
         df[col] = df[col].astype(str).str.strip()
 
-# ---------------- DROP EMPTY COLUMNS ----------------
-df = df.dropna(axis=1, how='all')
-
-# ---------------- DROP HIGH MISSING COLUMNS ----------------
-df = df.loc[:, df.isnull().mean() < 0.9]
-
-# ---------------- SMART NUMERIC CONVERSION ----------------
-for col in df.columns:
-    if df[col].dtype == "object":
-
-        temp = df[col].astype(str).str.replace(r"[^\d.-]", "", regex=True)
-
-        numeric_count = pd.to_numeric(temp, errors='coerce').notna().sum()
-        total_count = len(df[col])
-
-        # Convert ONLY if 70%+ values are numeric
-        if total_count > 0 and (numeric_count / total_count) > 0.7:
-            df[col] = pd.to_numeric(temp, errors='coerce')
-
-def clean_data(df):
-    df = df.copy()
-
-    # ---------------- TRIM TEXT ----------------
-    for col in df.select_dtypes(include='object').columns:
-        df[col] = df[col].astype(str).str.strip()
-
-    # ---------------- DROP EMPTY COLUMNS ----------------
+    # Drop empty columns
     df = df.dropna(axis=1, how='all')
 
-    # ---------------- DROP HIGH MISSING ----------------
+    # Drop high missing columns
     df = df.loc[:, df.isnull().mean() < 0.9]
 
-    # ---------------- SMART NUMERIC ----------------
+    # Smart numeric conversion (SAFE)
     for col in df.columns:
         if df[col].dtype == "object":
+
             temp = df[col].astype(str).str.replace(r"[^\d.-]", "", regex=True)
 
             numeric_count = pd.to_numeric(temp, errors='coerce').notna().sum()
             total_count = len(df[col])
 
+            # Only convert if mostly numeric
             if total_count > 0 and (numeric_count / total_count) > 0.7:
                 df[col] = pd.to_numeric(temp, errors='coerce')
 
-    # ---------------- REMOVE DUPLICATES ----------------
+    # Remove duplicates
     df = df.drop_duplicates()
 
     return df
+
 
 # ---------------- FILE UPLOAD ----------------
 uploaded_files = st.sidebar.file_uploader(
@@ -97,7 +78,7 @@ df = st.session_state.cleaned_df
 
 st.sidebar.success(f"Active File: {selected_file}")
 
-# ---------------- SEARCH FILTER ----------------
+# ---------------- SEARCH ----------------
 search = st.sidebar.text_input("Search")
 
 if search:
@@ -156,7 +137,6 @@ with tabs[5]:
     st.subheader("🧹 Data Cleaning Summary")
 
     c1, c2, c3 = st.columns(3)
-
     c1.metric("Original Rows", raw_df.shape[0])
     c2.metric("Cleaned Rows", df.shape[0])
     c3.metric("Columns Removed", raw_df.shape[1] - df.shape[1])
