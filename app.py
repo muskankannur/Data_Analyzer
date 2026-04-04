@@ -86,41 +86,63 @@ if df is not None:
         else:
             st.warning("No numeric columns detected. Go to 'Charts' to try forcing a cleanup.")
 
-    # --- TAB 5: CHARTS (With enhanced cleaning) ---
+    # ---------------- TAB 5 ----------------
     with tab5:
         st.subheader("Charts & Visualizations")
-        
-        # --- ENHANCED CLEANING UTILITY ---
-        with st.expander("🛠 Advanced Data Cleaning (Fix Numeric Issues)"):
-            st.info("If your numbers contain symbols like $, %, or commas, select them below to convert them to numbers.")
-            cols_to_fix = st.multiselect("Select columns to force into numeric:", df.columns)
-            
-            if st.button("Clean Selected Columns"):
-                for col in cols_to_fix:
-                    # Remove characters that aren't digits, dots, or minus signs
-                    df[col] = df[col].astype(str).str.replace(r'[^\d.-]', '', regex=True)
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
-                st.session_state.files[selected_file] = df
-                st.success("Columns cleaned! Refreshing...")
-                st.rerun()
 
-        # Identify numeric columns for plotting
-        numeric_cols = df.select_dtypes(include='number').columns
-        
-        if len(numeric_cols) > 0:
-            plot_col = st.selectbox("Select column for Box Plot", numeric_cols)
-            fig = px.box(df, y=plot_col, points="all", title=f"Distribution of {plot_col}")
-            st.plotly_chart(fig, use_container_width=True)
+        # 1. CREATE A CLEAN COPY FOR PLOTTING
+        df_plot = df.copy()
 
-            if len(numeric_cols) >= 2:
-                st.write("### Compare Two Variables")
-                col_x = st.selectbox("X-axis", numeric_cols, index=0)
-                col_y = st.selectbox("Y-axis", numeric_cols, index=min(1, len(numeric_cols)-1))
-                fig_scatter = px.scatter(df, x=col_x, y=col_y, trendline="ols")
-                st.plotly_chart(fig_scatter, use_container_width=True)
+        # 🛠️ AUTO-CLEAN: Try to convert potential numeric columns that are stuck as 'object'
+        for col in df_plot.columns:
+            if df_plot[col].dtype == 'object':
+                # Check if the column looks like currency or numbers with commas
+                # We strip $, commas, and whitespace
+                test_clean = df_plot[col].astype(str).str.replace(r'[^\d.-]', '', regex=True)
+                converted = pd.to_numeric(test_clean, errors='coerce')
+                
+                # If at least 50% of the column successfully converted to numbers, keep it!
+                if converted.notnull().sum() > (len(df_plot) * 0.5):
+                    df_plot[col] = converted
+
+        # 2. IDENTIFY VALID COLUMNS
+        all_cols = df_plot.columns.tolist()
+        numeric_cols = df_plot.select_dtypes(include='number').columns.tolist()
+
+        if all_cols:
+            st.write("### Compare Two Variables")
+            col_x = st.selectbox("X-axis (Select Contract Amount)", all_cols, 
+                                 index=all_cols.index("CONTRACT AMOUNT") if "CONTRACT AMOUNT" in all_cols else 0)
+            col_y = st.selectbox("Y-axis (Select SEO Manager)", all_cols, 
+                                 index=all_cols.index("SEO MANAGER w/ STRATEGIST") if "SEO MANAGER w/ STRATEGIST" in all_cols else 0)
+
+            # 🔍 DIAGNOSTIC CHECK
+            if df_plot[col_x].dtype == 'object' and df_plot[col_y].dtype == 'object':
+                st.error(f"⚠️ Both '{col_x}' and '{col_y}' are currently Text (Categorical). Scatter plots need at least one numeric column to show data points.")
+            else:
+                # 3. RENDER CHART
+                try:
+                    fig_scatter = px.scatter(
+                        df_plot, 
+                        x=col_x, 
+                        y=col_y, 
+                        color=col_y if df_plot[col_y].dtype == 'object' else None,
+                        title=f"{col_x} vs {col_y}",
+                        template="plotly_white"
+                    )
+                    st.plotly_chart(fig_scatter, use_container_width=True)
+                except Exception as e:
+                    st.error(f"Error rendering chart: {e}")
+
+            # 4. DATA HEALTH CHECK (Visible in Tab)
+            with st.expander("View Data Types for these columns"):
+                st.write(f"**{col_x} Type:** {df_plot[col_x].dtype}")
+                st.write(f"**{col_y} Type:** {df_plot[col_y].dtype}")
+                st.write(f"**Empty Rows in {col_x}:** {df_plot[col_x].isnull().sum()}")
+                st.write(f"**Empty Rows in {col_y}:** {df_plot[col_y].isnull().sum()}")
+
         else:
-            st.error("No numeric data detected. Use the cleaning tool above to fix columns.")
-
+            st.error("No data available to plot.")
     # --- TAB 6: QUALITY ---
     with tab6:
         st.subheader("Data Quality")
