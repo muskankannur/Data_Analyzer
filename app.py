@@ -72,66 +72,76 @@ with tabs[0]:
     c3.metric("Total Deals", total_deals)
     c4.metric("Latest Month Revenue", f"{latest_revenue:,.0f}")
 
-# ---------------- CHARTS ----------------
-with tabs[1]:
+st.subheader("📊 Clean Business Insights")
 
-    st.subheader("🎯 Select Columns")
-    num_cols = df.select_dtypes(include='number').columns.tolist()
+# -------- SAFE COPY --------
+clean_df = df.copy()
 
-    selected_cols = st.multiselect(
-        "Choose numeric columns",
-        num_cols,
-        default=num_cols[:2]
+# -------- CLEAN DATE --------
+if "Close Date" in clean_df.columns:
+    clean_df["Close Date"] = pd.to_datetime(clean_df["Close Date"], errors="coerce")
+
+# -------- CLEAN CONTRACT AMOUNT --------
+if "CONTRACT AMOUNT" in clean_df.columns:
+    clean_df["CONTRACT AMOUNT"] = (
+        clean_df["CONTRACT AMOUNT"]
+        .astype(str)
+        .str.replace(r"[^\d.]", "", regex=True)  # removes everything except numbers
+    )
+    clean_df["CONTRACT AMOUNT"] = pd.to_numeric(clean_df["CONTRACT AMOUNT"], errors="coerce")
+
+# -------- DROP BAD DATA --------
+clean_df = clean_df.dropna(subset=["Close Date", "CONTRACT AMOUNT"])
+
+# -------- DEBUG (IMPORTANT) --------
+st.write("Rows after cleaning:", clean_df.shape[0])
+
+# -------- STOP IF EMPTY --------
+if clean_df.empty:
+    st.error("No usable data — your dataset is messy")
+else:
+
+    # -------- KPI --------
+    st.subheader("📌 Key Metrics")
+
+    c1, c2 = st.columns(2)
+    c1.metric("Total Revenue", f"{clean_df['CONTRACT AMOUNT'].sum():,.0f}")
+    c2.metric("Total Deals", clean_df.shape[0])
+
+    # -------- MONTHLY TREND --------
+    st.subheader("📈 Monthly Revenue Trend")
+
+    trend = clean_df.groupby(
+        clean_df["Close Date"].dt.to_period("M")
+    )["CONTRACT AMOUNT"].sum().reset_index()
+
+    trend["Close Date"] = trend["Close Date"].astype(str)
+
+    fig = px.line(
+        trend,
+        x="Close Date",
+        y="CONTRACT AMOUNT",
+        markers=True
     )
 
-    # Histogram
-    if selected_cols:
-        col = st.selectbox("Histogram Column", selected_cols)
-        fig = px.histogram(df, x=col, title=f"Distribution of {col}")
-        fig.update_layout(xaxis_title=col, yaxis_title="Count")
-        st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(
+        xaxis_title="Month",
+        yaxis_title="Revenue"
+    )
 
-    # Box Plot
-    if selected_cols:
-        col2 = st.selectbox("Box Plot Column", selected_cols, key="box")
-        fig2 = px.box(df, y=col2, title=f"Outliers in {col2}")
-        st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True)
 
-    # Scatter Plot
-    if len(selected_cols) >= 2:
-        x_col = st.selectbox("X-axis", selected_cols, key="x")
-        y_col = st.selectbox("Y-axis", selected_cols, key="y")
+    # -------- SIMPLE HISTOGRAM --------
+    st.subheader("📊 Deal Size Distribution")
 
-        fig3 = px.scatter(df, x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
-        st.plotly_chart(fig3, use_container_width=True)
+    fig2 = px.histogram(clean_df, x="CONTRACT AMOUNT")
 
-    # Revenue Trend
-    if "Close Date" in df.columns and "CONTRACT AMOUNT" in df.columns:
+    fig2.update_layout(
+        xaxis_title="Contract Amount",
+        yaxis_title="Number of Deals"
+    )
 
-        clean_df = df.dropna(subset=["Close Date", "CONTRACT AMOUNT"])
-
-        if not clean_df.empty:
-            trend = clean_df.groupby(
-                clean_df["Close Date"].dt.to_period("M")
-            )["CONTRACT AMOUNT"].sum().reset_index()
-
-            trend["Close Date"] = trend["Close Date"].astype(str)
-
-            fig4 = px.line(
-                trend,
-                x="Close Date",
-                y="CONTRACT AMOUNT",
-                markers=True,
-                title="📈 Monthly Revenue Trend"
-            )
-
-            fig4.update_layout(
-                xaxis_title="Month",
-                yaxis_title="Total Revenue"
-            )
-
-            st.plotly_chart(fig4, use_container_width=True)
-
+    st.plotly_chart(fig2, use_container_width=True)
 # ---------------- ADVANCED ----------------
 with tabs[2]:
     st.subheader("Advanced Insights")
