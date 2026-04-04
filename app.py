@@ -122,21 +122,85 @@ with tabs[4]:
         fig = px.bar(x=top.index, y=top.values)
         st.plotly_chart(fig, use_container_width=True)
 
-# ---------------- DATA QUALITY ----------------
-with tabs[5]:
-    st.subheader("Duplicates")
-    dup = df[df.duplicated()]
-    st.write(f"Duplicate Rows: {dup.shape[0]}")
-    if not dup.empty:
-        st.dataframe(dup)
+# ---------------- TAB 5: CHARTS ----------------
+with tab5:
+    st.subheader("📊 Business Insights Dashboard")
 
-    st.subheader("All Null Columns")
-    null_cols = df.columns[df.isnull().all()]
-    st.write(null_cols)
+    # Ensure date conversion (important for trend)
+    if "Close Date" in df.columns:
+        df["Close Date"] = pd.to_datetime(df["Close Date"], errors='coerce')
 
-    st.subheader("High Cardinality Columns")
-    high_card = [col for col in df.columns if df[col].nunique() > 50]
-    st.write(high_card)
+    # -------- 1. CONTRACT AMOUNT DISTRIBUTION --------
+    if "CONTRACT AMOUNT" in df.columns:
+        st.subheader("💰 How Big Are Our Deals?")
+        fig1 = px.histogram(
+            df,
+            x="CONTRACT AMOUNT",
+            nbins=30,
+            title="Distribution of Contract Amount"
+        )
+        fig1.update_layout(
+            xaxis_title="Contract Amount",
+            yaxis_title="Number of Deals"
+        )
+        st.plotly_chart(fig1, use_container_width=True)
+
+    # -------- 2. TOP OPPORTUNITY OWNERS --------
+    if "Opportunity Owner_Name" in df.columns:
+        st.subheader("👩‍💼 Who Handles Most Opportunities?")
+        top_owner = df["Opportunity Owner_Name"].value_counts().head(10)
+
+        fig2 = px.bar(
+            x=top_owner.index,
+            y=top_owner.values,
+            title="Top 10 Opportunity Owners"
+        )
+        fig2.update_layout(
+            xaxis_title="Owner",
+            yaxis_title="Number of Opportunities"
+        )
+        st.plotly_chart(fig2, use_container_width=True)
+
+    # -------- 3. BUSINESS TYPE SPLIT --------
+    if "B2C / B2B__" in df.columns:
+        st.subheader("🏢 Business Type Distribution")
+
+        fig3 = px.pie(
+            df,
+            names="B2C / B2B__",
+            title="B2B vs B2C Split"
+        )
+        st.plotly_chart(fig3, use_container_width=True)
+
+    # -------- 4. REVENUE TREND --------
+    if "Close Date" in df.columns and "CONTRACT AMOUNT" in df.columns:
+        st.subheader("📈 Monthly Revenue Trend")
+
+        trend = df.groupby(df["Close Date"].dt.to_period("M"))["CONTRACT AMOUNT"].sum()
+        trend = trend.reset_index()
+        trend["Close Date"] = trend["Close Date"].astype(str)
+
+        fig4 = px.line(
+            trend,
+            x="Close Date",
+            y="CONTRACT AMOUNT",
+            title="Revenue Trend Over Time"
+        )
+        fig4.update_layout(
+            xaxis_title="Month",
+            yaxis_title="Total Revenue"
+        )
+        st.plotly_chart(fig4, use_container_width=True)
+
+    # -------- 5. OUTLIER DETECTION --------
+    if "CONTRACT AMOUNT" in df.columns:
+        st.subheader("⚠️ Are There Unusually Large Deals?")
+        fig5 = px.box(
+            df,
+            y="CONTRACT AMOUNT",
+            title="Outlier Detection in Contract Amount"
+        )
+        st.plotly_chart(fig5, use_container_width=True)
 
 # ---------------- ADVANCED VISUALS ----------------
 with tabs[6]:
