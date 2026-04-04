@@ -5,11 +5,12 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 # ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="Salesforce Audit Dashboard", layout="wide")
+st.set_page_config(page_title="Advanced Data Dashboard", layout="wide")
 
-st.title("📊 Salesforce Account Audit Dashboard")
+st.title("📊 Advanced Data Explorer")
+st.markdown("Upload and analyze multiple datasets with powerful insights")
 
-# ---------------- FILE UPLOAD ----------------
+# ---------------- MULTI FILE UPLOAD ----------------
 uploaded_files = st.sidebar.file_uploader(
     "Upload CSV Files", type=["csv"], accept_multiple_files=True
 )
@@ -23,21 +24,32 @@ for file in uploaded_files:
 
 file_names = list(st.session_state.files.keys())
 
+# ---------------- LANDING PAGE ----------------
 if not file_names:
-    st.info("Upload a CSV file to start")
+    st.markdown("## 👋 Welcome!")
+    st.info("Upload one or more CSV files from the sidebar to start analysis.")
     st.stop()
 
+# ---------------- FILE SELECT ----------------
 selected_file = st.sidebar.selectbox("Select File", file_names)
 df = st.session_state.files[selected_file]
 
-# ---------------- INITIAL CLEAN COPY ----------------
-if "cleaned_df" not in st.session_state:
-    st.session_state.cleaned_df = df.copy()
+st.sidebar.success(f"Active File: {selected_file}")
 
-# ---------------- SEARCH FILTER ----------------
-search = st.sidebar.text_input("Search")
+# ---------------- SEARCH + FILTER ----------------
+st.sidebar.markdown("### 🔍 Filters")
+
+search = st.sidebar.text_input("Search keyword")
 if search:
-    df = df[df.astype(str).apply(lambda x: x.str.contains(search, case=False).any(), axis=1)]
+    df = df[df.astype(str).apply(lambda row: row.str.contains(search, case=False).any(), axis=1)]
+
+for col in df.select_dtypes(include='object').columns:
+    vals = st.sidebar.multiselect(f"{col}", df[col].dropna().unique())
+    if vals:
+        df = df[df[col].isin(vals)]
+
+sort_col = st.sidebar.selectbox("Sort By", df.columns)
+df = df.sort_values(by=sort_col)
 
 # ---------------- TABS ----------------
 tabs = st.tabs([
@@ -47,34 +59,24 @@ tabs = st.tabs([
 
 # ---------------- OVERVIEW ----------------
 with tabs[0]:
-    st.subheader("📌 Key Metrics")
+    file_size = st.session_state.files[selected_file].memory_usage().sum() / 1024**2
+    mem = df.memory_usage(deep=True).sum() / 1024**2
 
-    temp_df = st.session_state.cleaned_df.copy()
-
-    if "CONTRACT AMOUNT" in temp_df.columns:
-        temp_df["CONTRACT AMOUNT"] = (
-            temp_df["CONTRACT AMOUNT"]
-            .astype(str)
-            .str.replace(r"[^\d.]", "", regex=True)
-        )
-        temp_df["CONTRACT AMOUNT"] = pd.to_numeric(temp_df["CONTRACT AMOUNT"], errors='coerce')
-
-    total_revenue = temp_df["CONTRACT AMOUNT"].sum() if "CONTRACT AMOUNT" in temp_df.columns else 0
-    avg_deal = temp_df["CONTRACT AMOUNT"].mean() if "CONTRACT AMOUNT" in temp_df.columns else 0
-    total_deals = len(temp_df)
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Revenue", f"{total_revenue:,.0f}")
-    c2.metric("Avg Deal Size", f"{avg_deal:,.0f}")
-    c3.metric("Total Deals", total_deals)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Rows", df.shape[0])
+    c2.metric("Columns", df.shape[1])
+    c3.metric("File Size (MB)", f"{file_size:.2f}")
+    c4.metric("Memory Usage (MB)", f"{mem:.2f}")
 
 # ---------------- SCHEMA ----------------
 with tabs[1]:
-    st.dataframe(pd.DataFrame({
+    schema = pd.DataFrame({
         "Column": df.columns,
         "Type": df.dtypes.astype(str),
-        "Nulls": df.isnull().sum()
-    }))
+        "Non-Null": df.count(),
+        "Null": df.isnull().sum()
+    })
+    st.dataframe(schema)
 
 # ---------------- STATS ----------------
 with tabs[2]:
@@ -84,113 +86,71 @@ with tabs[2]:
 with tabs[3]:
     st.dataframe(df)
 
-# ---------------- DATA QUALITY ----------------
-with tabs[5]:
-    st.subheader("🧹 Data Cleaning Controls")
-
-    working_df = st.session_state.cleaned_df
-
-    # EMPTY COLUMNS
-    empty_cols = working_df.columns[working_df.isnull().all()].tolist()
-    st.write("Empty Columns:", empty_cols)
-
-    if st.button("Drop Empty Columns"):
-        working_df = working_df.drop(columns=empty_cols)
-        st.session_state.cleaned_df = working_df
-        st.success("Empty columns removed")
-
-    # DUPLICATES
-    dup_count = working_df.duplicated().sum()
-    st.write(f"Duplicate Rows: {dup_count}")
-
-    if st.button("Remove Duplicates"):
-        working_df = working_df.drop_duplicates()
-        st.session_state.cleaned_df = working_df
-        st.success("Duplicates removed")
-
-    # MISSING
-    st.write("Missing Values:")
-    st.write(working_df.isnull().sum())
-
+# ---------------- CHARTS ----------------
 with tabs[4]:
-    st.subheader("📊 Business Insights")
+    st.subheader("📊 Business Insights Dashboard")
 
-    clean_df = st.session_state.cleaned_df.copy()
+    # Clean data ONCE
+    if "Close Date" in df.columns:
+        df["Close Date"] = pd.to_datetime(df["Close Date"], errors='coerce')
 
-    # -------- DATE CLEANING --------
-    if "Close Date" in clean_df.columns:
-        clean_df["Close Date"] = pd.to_datetime(clean_df["Close Date"], errors="coerce")
+    if "CONTRACT AMOUNT" in df.columns:
+        df["CONTRACT AMOUNT"] = (
+            df["CONTRACT AMOUNT"]
+            .astype(str)
+            .str.replace("$", "", regex=False)
+            .str.replace(",", "", regex=False)
+        )
+        df["CONTRACT AMOUNT"] = pd.to_numeric(df["CONTRACT AMOUNT"], errors='coerce')
 
-    # -------- NUMERIC CLEANING --------
-    for col in clean_df.columns:
-        if clean_df[col].dtype == "object":
-            cleaned = (
-                clean_df[col]
-                .astype(str)
-                .str.replace(r"[^\d.]", "", regex=True)
-            )
-            clean_df[col] = pd.to_numeric(cleaned, errors="coerce")
+    # 1. Histogram
+    if "CONTRACT AMOUNT" in df.columns:
+        fig1 = px.histogram(df, x="CONTRACT AMOUNT", title="Contract Amount Distribution")
+        st.plotly_chart(fig1)
 
-    # -------- SELECT NUMERIC COLUMNS --------
-    num_cols = clean_df.select_dtypes(include='number').columns.tolist()
+    # 2. Owner chart
+    if "Opportunity Owner_Name" in df.columns:
+        top_owner = df["Opportunity Owner_Name"].value_counts().head(10)
+        fig2 = px.bar(x=top_owner.index, y=top_owner.values, title="Top Owners")
+        st.plotly_chart(fig2)
 
-    if not num_cols:
-        st.error("No numeric columns available for analysis")
-        st.stop()
+    # 3. Pie
+    if "B2C / B2B__" in df.columns:
+        fig3 = px.pie(df, names="B2C / B2B__", title="B2B vs B2C")
+        st.plotly_chart(fig3)
 
-    selected_col = st.selectbox("Select Column for Analysis", num_cols)
+    # 4. Revenue Trend (FIXED)
+    if "Close Date" in df.columns and "CONTRACT AMOUNT" in df.columns:
 
-    # -------- DROP ONLY IMPORTANT NULLS --------
-    required_cols = [selected_col]
+        clean_df = df.dropna(subset=["Close Date", "CONTRACT AMOUNT"])
 
-    if "Close Date" in clean_df.columns:
-        required_cols.append("Close Date")
-
-    clean_df = clean_df.dropna(subset=required_cols)
-
-    # -------- FINAL CHECK --------
-    if clean_df.empty:
-        st.error("No valid data after filtering (your column is mostly empty)")
-    else:
-        # KPI
-        st.metric("Total Value", f"{clean_df[selected_col].sum():,.0f}")
-
-        # HISTOGRAM
-        fig1 = px.histogram(clean_df, x=selected_col,
-                            title=f"{selected_col} Distribution")
-        st.plotly_chart(fig1, use_container_width=True)
-
-        # BOX
-        fig2 = px.box(clean_df, y=selected_col,
-                      title=f"{selected_col} Outliers")
-        st.plotly_chart(fig2, use_container_width=True)
-
-        # TREND
-        if "Close Date" in clean_df.columns:
+        if not clean_df.empty:
             trend = clean_df.groupby(
                 clean_df["Close Date"].dt.to_period("M")
-            )[selected_col].sum().reset_index()
+            )["CONTRACT AMOUNT"].sum().reset_index()
 
             trend["Close Date"] = trend["Close Date"].astype(str)
 
-            fig3 = px.line(
-                trend,
+            fig4 = px.line(
+                trend.tail(12),
                 x="Close Date",
-                y=selected_col,
+                y="CONTRACT AMOUNT",
                 markers=True,
-                title=f"Monthly Trend of {selected_col}"
+                title="Monthly Revenue Trend"
             )
 
-            st.plotly_chart(fig3, use_container_width=True)
+            st.plotly_chart(fig4)
 
 # ---------------- ADVANCED ----------------
 with tabs[6]:
     st.subheader("Advanced Analysis")
 
-    fig, ax = plt.subplots()
-    sns.heatmap(df.isnull(), cbar=False)
-    st.pyplot(fig)
+    num_cols = df.select_dtypes(include='number').columns
+
+    if len(num_cols) > 0:
+        fig = px.box(df, y=num_cols[0])
+        st.plotly_chart(fig)
 
 # ---------------- EXPORT ----------------
 with tabs[7]:
-    st.download_button("Download CSV", st.session_state.cleaned_df.to_csv().encode(), "clean_data.csv")
+    st.download_button("Download CSV", df.to_csv().encode(), "data.csv")
