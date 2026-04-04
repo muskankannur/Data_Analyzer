@@ -38,10 +38,10 @@ if file_names:
     df = st.session_state.files[selected_file]
     st.sidebar.success(f"Active File: {selected_file}")
 
-    # ✅ Sidebar Filters (CORRECT PLACE)
+    # ✅ Sidebar Filters
     st.sidebar.write("### Filters")
     for col in df.select_dtypes(include='object').columns:
-        values = st.sidebar.multiselect(f"Filter {col}", df[col].unique())
+        values = st.sidebar.multiselect(f"Filter {col}", df[col].dropna().unique())
         if values:
             df = df[df[col].isin(values)]
 
@@ -83,11 +83,8 @@ if df is not None:
     with tab3:
         st.subheader("Statistics Summary")
 
-        df_converted = df.copy()
-        for col in df_converted.columns:
-            df_converted[col] = pd.to_numeric(df_converted[col], errors='coerce')
-
-        numeric_df = df_converted.select_dtypes(include='number')
+        # Gently find columns that are already numeric
+        numeric_df = df.select_dtypes(include='number')
 
         st.write("### Numeric Columns")
         if not numeric_df.empty:
@@ -120,18 +117,25 @@ if df is not None:
 
         df_plot = df.copy()
 
-        # Clean numeric values
+        # Clean numeric values safely
         for col in df_plot.columns:
             if df_plot[col].dtype == 'object':
-                df_plot[col] = df_plot[col].astype(str).str.replace(r'[^\d.-]', '', regex=True)
-                df_plot[col] = pd.to_numeric(df_plot[col], errors='coerce')
+                try:
+                    # Remove commas (e.g., "1,000.50" -> "1000.50") and try converting
+                    clean_col = df_plot[col].astype(str).str.replace(',', '')
+                    df_plot[col] = pd.to_numeric(clean_col)
+                except ValueError:
+                    # If it fails, it's a real text column (like Names/Cities). Leave it alone!
+                    pass 
 
         numeric_cols = df_plot.select_dtypes(include='number').columns
-        valid_plot_cols = [c for c in numeric_cols if df_plot[c].dropna().nunique() > 1]
+        
+        # Changed to > 0 so columns with a single constant number don't get thrown out
+        valid_plot_cols = [c for c in numeric_cols if df_plot[c].dropna().nunique() > 0]
 
         if valid_plot_cols:
 
-            plot_col = st.selectbox("Select column", valid_plot_cols)
+            plot_col = st.selectbox("Select column for Box Plot", valid_plot_cols)
 
             fig = px.box(df_plot, y=plot_col)
             st.plotly_chart(fig, use_container_width=True)
@@ -152,12 +156,13 @@ if df is not None:
 
             # Correlation
             st.write("### Correlation Matrix")
+            # Calculate correlation only on valid numeric columns
             corr = df_plot[valid_plot_cols].corr()
             fig_corr = px.imshow(corr, text_auto=True)
             st.plotly_chart(fig_corr, use_container_width=True)
 
         else:
-            st.error("No numeric data detected")
+            st.error("No numeric data detected after cleaning. Ensure your numbers aren't formatted with special characters (like $ or €) without cleaning them first.")
 
     # ---------------- TAB 6 ----------------
     with tab6:
@@ -170,8 +175,12 @@ if df is not None:
             st.warning(f"Empty Columns: {list(null_cols)}")
 
             if st.button("Drop Empty Columns"):
+                # Updates the session state dataframe and refreshes the app
                 st.session_state.files[selected_file] = df.drop(columns=null_cols)
+                st.success("Empty columns dropped!")
                 st.rerun()
+        else:
+            st.success("No completely empty columns found.")
 
     # ---------------- TAB 7 ----------------
     with tab7:
