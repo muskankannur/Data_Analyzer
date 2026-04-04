@@ -8,9 +8,8 @@ import matplotlib.pyplot as plt
 st.set_page_config(page_title="Advanced Data Dashboard", layout="wide")
 
 st.title("📊 Advanced Data Explorer")
-st.markdown("Upload and analyze multiple datasets with powerful insights")
 
-# ---------------- MULTI FILE UPLOAD ----------------
+# ---------------- FILE UPLOAD ----------------
 uploaded_files = st.sidebar.file_uploader(
     "Upload CSV Files", type=["csv"], accept_multiple_files=True
 )
@@ -24,36 +23,30 @@ for file in uploaded_files:
 
 file_names = list(st.session_state.files.keys())
 
-# ---------------- LANDING PAGE ----------------
 if not file_names:
-    st.markdown("## 👋 Welcome!")
-    st.info("Upload one or more CSV files from the sidebar to start analysis.")
+    st.info("Upload CSV files to start")
     st.stop()
 
-# ---------------- FILE SELECT ----------------
+# ---------------- SELECT FILE ----------------
 selected_file = st.sidebar.selectbox("Select File", file_names)
 df = st.session_state.files[selected_file]
 
-# ---------------- CLEANED DF STATE ----------------
+# ---------------- CLEANED DF ----------------
 if "cleaned_df" not in st.session_state:
     st.session_state.cleaned_df = df.copy()
 
 st.sidebar.success(f"Active File: {selected_file}")
 
-# ---------------- SEARCH + FILTER ----------------
-st.sidebar.markdown("### 🔍 Filters")
+# ---------------- FILTERS ----------------
+search = st.sidebar.text_input("Search")
 
-search = st.sidebar.text_input("Search keyword")
 if search:
-    df = df[df.astype(str).apply(lambda row: row.str.contains(search, case=False).any(), axis=1)]
+    df = df[df.astype(str).apply(lambda x: x.str.contains(search, case=False).any(), axis=1)]
 
 for col in df.select_dtypes(include='object').columns:
-    vals = st.sidebar.multiselect(f"{col}", df[col].dropna().unique())
+    vals = st.sidebar.multiselect(col, df[col].dropna().unique())
     if vals:
         df = df[df[col].isin(vals)]
-
-sort_col = st.sidebar.selectbox("Sort By", df.columns)
-df = df.sort_values(by=sort_col)
 
 # ---------------- TABS ----------------
 tabs = st.tabs([
@@ -63,22 +56,15 @@ tabs = st.tabs([
 
 # ---------------- OVERVIEW ----------------
 with tabs[0]:
-    file_size = st.session_state.files[selected_file].memory_usage().sum() / 1024**2
-    mem = df.memory_usage(deep=True).sum() / 1024**2
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Rows", df.shape[0])
-    c2.metric("Columns", df.shape[1])
-    c3.metric("File Size (MB)", f"{file_size:.2f}")
-    c4.metric("Memory Usage (MB)", f"{mem:.2f}")
+    st.metric("Rows", df.shape[0])
+    st.metric("Columns", df.shape[1])
 
 # ---------------- SCHEMA ----------------
 with tabs[1]:
     schema = pd.DataFrame({
         "Column": df.columns,
         "Type": df.dtypes.astype(str),
-        "Non-Null": df.count(),
-        "Null": df.isnull().sum()
+        "Nulls": df.isnull().sum()
     })
     st.dataframe(schema)
 
@@ -92,204 +78,124 @@ with tabs[3]:
 
 # ---------------- DATA QUALITY ----------------
 with tabs[5]:
-    st.subheader("🧹 Data Quality Analysis")
+    st.subheader("Data Cleaning")
 
     working_df = st.session_state.cleaned_df
 
-    # Missing Values
-    st.markdown("### Missing Values")
+    st.write("Missing Values")
     st.write(working_df.isnull().sum())
 
-    # Empty Columns
     empty_cols = working_df.columns[working_df.isnull().all()].tolist()
-    st.markdown("### Empty Columns")
-    st.write(empty_cols)
+    st.write("Empty Columns:", empty_cols)
 
     if st.button("Drop Empty Columns"):
-        working_df = working_df.drop(columns=empty_cols)
-        st.session_state.cleaned_df = working_df
-        st.success("Empty columns removed")
+        st.session_state.cleaned_df = working_df.drop(columns=empty_cols)
+        st.rerun()
 
-    # Duplicates
-    st.markdown("### Duplicate Rows")
-    dup_count = working_df.duplicated().sum()
-    st.write(f"Total Duplicates: {dup_count}")
+    dup = working_df.duplicated().sum()
+    st.write(f"Duplicates: {dup}")
 
     if st.button("Remove Duplicates"):
-        working_df = working_df.drop_duplicates()
-        st.session_state.cleaned_df = working_df
-        st.success("Duplicates removed")
+        st.session_state.cleaned_df = working_df.drop_duplicates()
+        st.rerun()
 
 # ---------------- CHARTS ----------------
 with tabs[4]:
-    st.subheader("📊 Business Insights Dashboard")
+    st.subheader("Charts")
 
     clean_df = st.session_state.cleaned_df.copy()
 
-    # Date cleaning
-    if "Close Date" in clean_df.columns:
-        clean_df["Close Date"] = pd.to_datetime(clean_df["Close Date"], errors='coerce')
-
-    # Numeric cleaning
+    # Convert numeric
     for col in clean_df.columns:
         if clean_df[col].dtype == "object":
-            cleaned = clean_df[col].astype(str).str.replace(r"[^\d.]", "", regex=True)
-            clean_df[col] = pd.to_numeric(cleaned, errors="coerce")
+            clean_df[col] = pd.to_numeric(
+                clean_df[col].astype(str).str.replace(r"[^\d.]", "", regex=True),
+                errors="coerce"
+            )
 
-    # Select numeric column
     num_cols = clean_df.select_dtypes(include='number').columns.tolist()
 
-    if not num_cols:
-        st.error("No numeric columns found")
-    else:
+    if num_cols:
         selected_col = st.selectbox("Select Column", num_cols)
 
-        # Drop only necessary nulls
-        required_cols = [selected_col]
-        if "Close Date" in clean_df.columns:
-            required_cols.append("Close Date")
+        clean_df = clean_df.dropna(subset=[selected_col])
 
-        clean_df = clean_df.dropna(subset=required_cols)
+        st.metric("Total", f"{clean_df[selected_col].sum():,.0f}")
 
-        if clean_df.empty:
-            st.error("No valid data after cleaning")
-        else:
-            st.metric("Total", f"{clean_df[selected_col].sum():,.0f}")
+        st.plotly_chart(px.histogram(clean_df, x=selected_col))
+        st.plotly_chart(px.box(clean_df, y=selected_col))
 
-            fig1 = px.histogram(clean_df, x=selected_col)
-            st.plotly_chart(fig1)
-
-            fig2 = px.box(clean_df, y=selected_col)
-            st.plotly_chart(fig2)
-
-            if "Close Date" in clean_df.columns:
-                trend = clean_df.groupby(
-                    clean_df["Close Date"].dt.to_period("M")
-                )[selected_col].sum().reset_index()
-
-                trend["Close Date"] = trend["Close Date"].astype(str)
-
-                fig3 = px.line(trend, x="Close Date", y=selected_col)
-                st.plotly_chart(fig3)
-
+# ---------------- ADVANCED ----------------
 with tabs[6]:
-    st.subheader("📊 Advanced Data Analysis")
+    st.subheader("Advanced Analysis")
 
     adv_df = st.session_state.cleaned_df.copy()
 
-    # -------- CLEAN NUMERIC DATA --------
     for col in adv_df.columns:
         if adv_df[col].dtype == "object":
-            cleaned = adv_df[col].astype(str).str.replace(r"[^\d.]", "", regex=True)
-            adv_df[col] = pd.to_numeric(cleaned, errors="coerce")
+            adv_df[col] = pd.to_numeric(
+                adv_df[col].astype(str).str.replace(r"[^\d.]", "", regex=True),
+                errors="coerce"
+            )
 
     num_cols = adv_df.select_dtypes(include='number').columns.tolist()
 
-    if not num_cols:
-        st.error("No numeric data available")
-    else:
-
-        # -------- COLUMN SELECT --------
-        selected_col = st.selectbox("Select Column for Analysis", num_cols)
+    if num_cols:
+        selected_col = st.selectbox("Column for Analysis", num_cols)
 
         adv_df = adv_df.dropna(subset=[selected_col])
 
-        if adv_df.empty:
-            st.error("No valid data after cleaning")
+        st.write(adv_df[selected_col].describe())
 
-        else:
-            # ---------------- SUMMARY STATS ----------------
-            st.markdown("### 📌 Statistical Summary")
+        # Outliers
+        q1 = adv_df[selected_col].quantile(0.25)
+        q3 = adv_df[selected_col].quantile(0.75)
+        iqr = q3 - q1
 
-            st.write(adv_df[selected_col].describe())
+        outliers = adv_df[
+            (adv_df[selected_col] < q1 - 1.5 * iqr) |
+            (adv_df[selected_col] > q3 + 1.5 * iqr)
+        ]
 
-            # ---------------- OUTLIER DETECTION ----------------
-            st.markdown("### 🚨 Outlier Detection")
+        st.write(f"Outliers: {len(outliers)}")
 
-            q1 = adv_df[selected_col].quantile(0.25)
-            q3 = adv_df[selected_col].quantile(0.75)
-            iqr = q3 - q1
+        # Correlation Heatmap
+        st.markdown("### Correlation Heatmap")
 
-            lower = q1 - 1.5 * iqr
-            upper = q3 + 1.5 * iqr
+        if len(num_cols) >= 2:
+            selected_cols = st.multiselect(
+                "Select columns",
+                num_cols,
+                default=num_cols[:5]
+            )
 
-            outliers = adv_df[
-                (adv_df[selected_col] < lower) |
-                (adv_df[selected_col] > upper)
-            ]
+            if len(selected_cols) >= 2:
+                corr = adv_df[selected_cols].corr()
 
-            st.write(f"Outliers Count: {len(outliers)}")
+                fig, ax = plt.subplots(figsize=(8, 5))
+                sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
+                st.pyplot(fig)
 
-            # ---------------- SKEWNESS ----------------
-            st.markdown("### 📊 Distribution Shape")
-
-            skew = adv_df[selected_col].skew()
-
-            if skew > 1:
-                st.warning("Highly Right Skewed (Most values are low, few very high)")
-            elif skew < -1:
-                st.warning("Highly Left Skewed (Most values are high, few very low)")
-            else:
-                st.success("Fairly Normal Distribution")
-
-            # ---------------- TOP CORRELATIONS ----------------
-            st.markdown("### 🔗 Strong Correlations")
-
-            corr = adv_df[num_cols].corr()[selected_col].drop(selected_col)
-
-            strong_corr = corr[abs(corr) > 0.5].sort_values(ascending=False)
-
-            if strong_corr.empty:
-                st.info("No strong correlations found")
-            else:
-                st.write(strong_corr)
-
-            # ---------------- INSIGHT ----------------
-            st.markdown("### 🧠 Auto Insight")
-
-            mean_val = adv_df[selected_col].mean()
-
-            st.write(f"""
-            - Average value is **{mean_val:,.2f}**
-            - Total records analyzed: **{len(adv_df)}**
-            - Data spread suggests variability in business performance
-            """)
-            with tabs[7]:
-                st.subheader("📤 Export Cleaned Data")
+# ---------------- EXPORT ----------------
+with tabs[7]:
+    st.subheader("Export Data")
 
     export_df = st.session_state.cleaned_df
 
-    if export_df.empty:
-        st.error("No data available to export")
+    st.dataframe(export_df.head())
+
+    file_format = st.selectbox("Format", ["CSV", "Excel"])
+    file_name = st.text_input("File Name", "clean_data")
+
+    if file_format == "CSV":
+        data = export_df.to_csv(index=False).encode("utf-8")
+        st.download_button("Download CSV", data, f"{file_name}.csv")
+
     else:
-        st.write("Preview of data to be exported:")
-        st.dataframe(export_df.head())
+        from io import BytesIO
+        buffer = BytesIO()
 
-        st.markdown("### Choose Export Format")
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            export_df.to_excel(writer, index=False)
 
-        file_format = st.selectbox("Format", ["CSV", "Excel"])
-
-        file_name = st.text_input("File Name", "clean_data")
-
-        if file_format == "CSV":
-            data = export_df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                label="📥 Download CSV",
-                data=data,
-                file_name=f"{file_name}.csv",
-                mime="text/csv"
-            )
-
-        elif file_format == "Excel":
-            from io import BytesIO
-
-            buffer = BytesIO()
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                export_df.to_excel(writer, index=False)
-
-            st.download_button(
-                label="📥 Download Excel",
-                data=buffer.getvalue(),
-                file_name=f"{file_name}.xlsx",
-                mime="application/vnd.ms-excel"
-            )
+        st.download_button("Download Excel", buffer.getvalue(), f"{file_name}.xlsx")
