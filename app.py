@@ -254,3 +254,42 @@ with tabs[6]:
             - Total records analyzed: **{len(adv_df)}**
             - Data spread suggests variability in business performance
             """)
+            with tabs[7]:
+                st.subheader("📤 Export Cleaned Data")
+
+    export_df = st.session_state.cleaned_df
+
+    if export_df.empty:
+        st.error("No data available to export")
+    else:
+        st.write("Preview of data to be exported:")
+        st.dataframe(export_df.head())
+
+        st.markdown("### Choose Export Format")
+
+        file_format = st.selectbox("Format", ["CSV", "Excel"])
+
+        file_name = st.text_input("File Name", "clean_data")
+
+        if file_format == "CSV":
+            data = export_df.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="📥 Download CSV",
+                data=data,
+                file_name=f"{file_name}.csv",
+                mime="text/csv"
+            )
+
+        elif file_format == "Excel":
+            from io import BytesIO
+
+            buffer = BytesIO()
+            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                export_df.to_excel(writer, index=False)
+
+            st.download_button(
+                label="📥 Download Excel",
+                data=buffer.getvalue(),
+                file_name=f"{file_name}.xlsx",
+                mime="application/vnd.ms-excel"
+            )
