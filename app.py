@@ -14,31 +14,57 @@ def clean_data(df):
         pd.NA
     )
 
-    # Trim text
+    # ---------------- TRIM TEXT ----------------
     for col in df.select_dtypes(include='object').columns:
         df[col] = df[col].astype(str).str.strip()
 
-    # Drop fully empty columns
+# ---------------- DROP EMPTY COLUMNS ----------------
+df = df.dropna(axis=1, how='all')
+
+# ---------------- DROP HIGH MISSING COLUMNS ----------------
+df = df.loc[:, df.isnull().mean() < 0.9]
+
+# ---------------- SMART NUMERIC CONVERSION ----------------
+for col in df.columns:
+    if df[col].dtype == "object":
+
+        temp = df[col].astype(str).str.replace(r"[^\d.-]", "", regex=True)
+
+        numeric_count = pd.to_numeric(temp, errors='coerce').notna().sum()
+        total_count = len(df[col])
+
+        # Convert ONLY if 70%+ values are numeric
+        if total_count > 0 and (numeric_count / total_count) > 0.7:
+            df[col] = pd.to_numeric(temp, errors='coerce')
+
+def clean_data(df):
+    df = df.copy()
+
+    # ---------------- TRIM TEXT ----------------
+    for col in df.select_dtypes(include='object').columns:
+        df[col] = df[col].astype(str).str.strip()
+
+    # ---------------- DROP EMPTY COLUMNS ----------------
     df = df.dropna(axis=1, how='all')
 
-    # Drop columns with >90% missing
+    # ---------------- DROP HIGH MISSING ----------------
     df = df.loc[:, df.isnull().mean() < 0.9]
 
-    # Convert numeric-like columns
+    # ---------------- SMART NUMERIC ----------------
     for col in df.columns:
         if df[col].dtype == "object":
-            cleaned = df[col].str.replace(r"[^\d.-]", "", regex=True)
-            df[col] = pd.to_numeric(cleaned, errors='ignore')
+            temp = df[col].astype(str).str.replace(r"[^\d.-]", "", regex=True)
 
-    # Remove duplicates
+            numeric_count = pd.to_numeric(temp, errors='coerce').notna().sum()
+            total_count = len(df[col])
+
+            if total_count > 0 and (numeric_count / total_count) > 0.7:
+                df[col] = pd.to_numeric(temp, errors='coerce')
+
+    # ---------------- REMOVE DUPLICATES ----------------
     df = df.drop_duplicates()
 
     return df
-
-
-# ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="Advanced Data Dashboard", layout="wide")
-st.title("📊 Advanced Data Explorer")
 
 # ---------------- FILE UPLOAD ----------------
 uploaded_files = st.sidebar.file_uploader(
