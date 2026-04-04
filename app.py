@@ -173,7 +173,7 @@ with tabs[4]:
                 st.plotly_chart(fig3)
 
 with tabs[6]:
-    st.subheader("📊 Advanced Analysis")
+    st.subheader("📊 Advanced Data Analysis")
 
     adv_df = st.session_state.cleaned_df.copy()
 
@@ -183,60 +183,74 @@ with tabs[6]:
             cleaned = adv_df[col].astype(str).str.replace(r"[^\d.]", "", regex=True)
             adv_df[col] = pd.to_numeric(cleaned, errors="coerce")
 
-    # -------- SELECT NUMERIC COLUMNS --------
     num_cols = adv_df.select_dtypes(include='number').columns.tolist()
 
     if not num_cols:
-        st.error("No numeric columns available for advanced analysis")
+        st.error("No numeric data available")
     else:
-        selected_col = st.selectbox("Select Column for Advanced Analysis", num_cols)
 
-        # Drop nulls only for selected column
+        # -------- COLUMN SELECT --------
+        selected_col = st.selectbox("Select Column for Analysis", num_cols)
+
         adv_df = adv_df.dropna(subset=[selected_col])
 
         if adv_df.empty:
             st.error("No valid data after cleaning")
+
         else:
-            st.metric("Average", f"{adv_df[selected_col].mean():,.2f}")
-            st.metric("Max", f"{adv_df[selected_col].max():,.2f}")
+            # ---------------- SUMMARY STATS ----------------
+            st.markdown("### 📌 Statistical Summary")
 
-            # Box plot
-            fig1 = px.box(adv_df, y=selected_col, title="Outlier Detection")
-            st.plotly_chart(fig1)
+            st.write(adv_df[selected_col].describe())
 
-            # Histogram
-            fig2 = px.histogram(adv_df, x=selected_col, title="Distribution")
-            st.plotly_chart(fig2)
+            # ---------------- OUTLIER DETECTION ----------------
+            st.markdown("### 🚨 Outlier Detection")
 
-            # Correlation Heatmap (Improved)
-if len(num_cols) > 1:
+            q1 = adv_df[selected_col].quantile(0.25)
+            q3 = adv_df[selected_col].quantile(0.75)
+            iqr = q3 - q1
 
-    st.subheader("Correlation Heatmap (Cleaned)")
+            lower = q1 - 1.5 * iqr
+            upper = q3 + 1.5 * iqr
 
-    # Limit columns (top 8 numeric only)
-    selected_cols = st.multiselect(
-        "Select columns for correlation",
-        num_cols,
-        default=num_cols[:5]
-    )
+            outliers = adv_df[
+                (adv_df[selected_col] < lower) |
+                (adv_df[selected_col] > upper)
+            ]
 
-    if len(selected_cols) < 2:
-        st.warning("Select at least 2 columns")
-    else:
-        corr = adv_df[selected_cols].corr()
+            st.write(f"Outliers Count: {len(outliers)}")
 
-        fig, ax = plt.subplots(figsize=(8, 5))
+            # ---------------- SKEWNESS ----------------
+            st.markdown("### 📊 Distribution Shape")
 
-        sns.heatmap(
-            corr,
-            annot=True,
-            fmt=".2f",
-            cmap="coolwarm",
-            linewidths=0.5,
-            ax=ax
-        )
+            skew = adv_df[selected_col].skew()
 
-        plt.xticks(rotation=45, ha='right')
-        plt.yticks(rotation=0)
+            if skew > 1:
+                st.warning("Highly Right Skewed (Most values are low, few very high)")
+            elif skew < -1:
+                st.warning("Highly Left Skewed (Most values are high, few very low)")
+            else:
+                st.success("Fairly Normal Distribution")
 
-        st.pyplot(fig)
+            # ---------------- TOP CORRELATIONS ----------------
+            st.markdown("### 🔗 Strong Correlations")
+
+            corr = adv_df[num_cols].corr()[selected_col].drop(selected_col)
+
+            strong_corr = corr[abs(corr) > 0.5].sort_values(ascending=False)
+
+            if strong_corr.empty:
+                st.info("No strong correlations found")
+            else:
+                st.write(strong_corr)
+
+            # ---------------- INSIGHT ----------------
+            st.markdown("### 🧠 Auto Insight")
+
+            mean_val = adv_df[selected_col].mean()
+
+            st.write(f"""
+            - Average value is **{mean_val:,.2f}**
+            - Total records analyzed: **{len(adv_df)}**
+            - Data spread suggests variability in business performance
+            """)
