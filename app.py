@@ -112,42 +112,57 @@ with tabs[5]:
     st.write("Missing Values:")
     st.write(working_df.isnull().sum())
 
-# ---------------- CHARTS ----------------
 with tabs[4]:
     st.subheader("📊 Business Insights")
 
     clean_df = st.session_state.cleaned_df.copy()
 
-    # Clean date
+    # -------- DATE CLEANING --------
     if "Close Date" in clean_df.columns:
         clean_df["Close Date"] = pd.to_datetime(clean_df["Close Date"], errors="coerce")
 
-    # Clean numeric columns dynamically
+    # -------- NUMERIC CLEANING --------
     for col in clean_df.columns:
         if clean_df[col].dtype == "object":
-            clean_df[col] = clean_df[col].astype(str).str.replace(r"[^\d.]", "", regex=True)
-            clean_df[col] = pd.to_numeric(clean_df[col], errors="ignore")
+            cleaned = (
+                clean_df[col]
+                .astype(str)
+                .str.replace(r"[^\d.]", "", regex=True)
+            )
+            clean_df[col] = pd.to_numeric(cleaned, errors="coerce")
 
-    clean_df = clean_df.dropna()
+    # -------- SELECT NUMERIC COLUMNS --------
+    num_cols = clean_df.select_dtypes(include='number').columns.tolist()
 
+    if not num_cols:
+        st.error("No numeric columns available for analysis")
+        st.stop()
+
+    selected_col = st.selectbox("Select Column for Analysis", num_cols)
+
+    # -------- DROP ONLY IMPORTANT NULLS --------
+    required_cols = [selected_col]
+
+    if "Close Date" in clean_df.columns:
+        required_cols.append("Close Date")
+
+    clean_df = clean_df.dropna(subset=required_cols)
+
+    # -------- FINAL CHECK --------
     if clean_df.empty:
-        st.error("No valid data")
+        st.error("No valid data after filtering (your column is mostly empty)")
     else:
-
-        # COLUMN SELECTION
-        num_cols = clean_df.select_dtypes(include='number').columns.tolist()
-
-        selected_col = st.selectbox("Select Column for Analysis", num_cols)
-
         # KPI
         st.metric("Total Value", f"{clean_df[selected_col].sum():,.0f}")
 
         # HISTOGRAM
-        fig1 = px.histogram(clean_df, x=selected_col, title=f"{selected_col} Distribution")
+        fig1 = px.histogram(clean_df, x=selected_col,
+                            title=f"{selected_col} Distribution")
         st.plotly_chart(fig1, use_container_width=True)
 
         # BOX
-        fig2 = px.box(clean_df, y=selected_col, title=f"{selected_col} Outliers")
+        fig2 = px.box(clean_df, y=selected_col,
+                      title=f"{selected_col} Outliers")
         st.plotly_chart(fig2, use_container_width=True)
 
         # TREND
@@ -158,8 +173,13 @@ with tabs[4]:
 
             trend["Close Date"] = trend["Close Date"].astype(str)
 
-            fig3 = px.line(trend, x="Close Date", y=selected_col, markers=True,
-                           title=f"Monthly Trend of {selected_col}")
+            fig3 = px.line(
+                trend,
+                x="Close Date",
+                y=selected_col,
+                markers=True,
+                title=f"Monthly Trend of {selected_col}"
+            )
 
             st.plotly_chart(fig3, use_container_width=True)
 
