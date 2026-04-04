@@ -163,52 +163,63 @@ with tabs[4]:
 
         st.plotly_chart(fig3, use_container_width=True)
 
-    # 4. Revenue Trend (FIXED)
-    if "Close Date" in df.columns and "CONTRACT AMOUNT" in df.columns:
-        st.subheader("📈 Monthly Revenue Trend (Clean View)")
+    # 4. Revenue Trend (FIXED + DEBUG)
+if "Close Date" in df.columns and "CONTRACT AMOUNT" in df.columns:
+    st.subheader("📈 Monthly Revenue Trend (Clean View)")
 
-        df["CONTRACT AMOUNT"] = pd.to_numeric(df["CONTRACT AMOUNT"], errors='coerce')
-        clean_df = df.dropna(subset=["Close Date", "CONTRACT AMOUNT"])
+    # 🔍 DEBUG BEFORE CLEANING
+    st.write("Raw Data Shape:", df.shape)
+    st.write("Sample Contract Amount:", df["CONTRACT AMOUNT"].head())
 
-        if not clean_df.empty:
+    # ✅ Clean Close Date
+    df["Close Date"] = pd.to_datetime(df["Close Date"], errors='coerce')
 
-            trend = clean_df.groupby(
-                clean_df["Close Date"].dt.to_period("M")
-            )["CONTRACT AMOUNT"].sum().reset_index()
+    # ✅ CLEAN CONTRACT AMOUNT (REAL FIX)
+    df["CONTRACT AMOUNT"] = (
+        df["CONTRACT AMOUNT"]
+        .astype(str)
+        .str.replace("$", "", regex=False)
+        .str.replace(",", "", regex=False)
+    )
 
-            trend["Close Date"] = trend["Close Date"].astype(str)
-            trend = trend.sort_values("Close Date").tail(12)
+    df["CONTRACT AMOUNT"] = pd.to_numeric(df["CONTRACT AMOUNT"], errors='coerce')
 
-            fig4 = px.line(
-                trend,
-                x="Close Date",
-                y="CONTRACT AMOUNT",
-                markers=True,
-                title="Total Contract Value per Month"
-            )
+    # 🔍 DEBUG AFTER CLEANING
+    st.write("Null Close Date:", df["Close Date"].isna().sum())
+    st.write("Null Contract Amount:", df["CONTRACT AMOUNT"].isna().sum())
 
-            fig4.update_layout(
-                xaxis_title="Month (Close Date)",
-                yaxis_title="Total Contract Amount"
-            )
+    # Drop invalid rows
+    clean_df = df.dropna(subset=["Close Date", "CONTRACT AMOUNT"])
 
-            st.plotly_chart(fig4, use_container_width=True)
+    st.write("Clean Data Shape:", clean_df.shape)
 
-        else:
-            st.warning("No valid data for revenue trend")
+    if not clean_df.empty:
 
-    # 5. Outliers
-    if "CONTRACT AMOUNT" in df.columns:
-        st.subheader("⚠️ Outlier Detection")
+        # Group monthly
+        trend = clean_df.groupby(
+            clean_df["Close Date"].dt.to_period("M")
+        )["CONTRACT AMOUNT"].sum().reset_index()
 
-        fig5 = px.box(
-            df,
+        trend["Close Date"] = trend["Close Date"].astype(str)
+        trend = trend.sort_values("Close Date").tail(12)
+
+        fig4 = px.line(
+            trend,
+            x="Close Date",
             y="CONTRACT AMOUNT",
-            title="Outliers in Contract Amount"
+            markers=True,
+            title="Total Contract Value per Month"
         )
 
-        st.plotly_chart(fig5, use_container_width=True)
+        fig4.update_layout(
+            xaxis_title="Month (Close Date)",
+            yaxis_title="Total Contract Amount"
+        )
 
+        st.plotly_chart(fig4, use_container_width=True)
+
+    else:
+        st.error("🚨 No valid data after cleaning — check your dataset")
 # ---------------- ADVANCED VISUALS ----------------
 with tabs[6]:
     st.subheader("📊 Advanced Data Analysis")
