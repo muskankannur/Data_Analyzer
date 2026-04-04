@@ -4,9 +4,40 @@ import plotly.express as px
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+# ---------------- CLEANING FUNCTION ----------------
+def clean_data(df):
+    df = df.copy()
+
+    # Standardize missing values
+    df = df.replace(
+        ["", " ", "NA", "N/A", "null", "None", "-", "--"],
+        pd.NA
+    )
+
+    # Trim text
+    for col in df.select_dtypes(include='object').columns:
+        df[col] = df[col].astype(str).str.strip()
+
+    # Drop fully empty columns
+    df = df.dropna(axis=1, how='all')
+
+    # Drop columns with >90% missing
+    df = df.loc[:, df.isnull().mean() < 0.9]
+
+    # Convert numeric-like columns
+    for col in df.columns:
+        if df[col].dtype == "object":
+            cleaned = df[col].str.replace(r"[^\d.-]", "", regex=True)
+            df[col] = pd.to_numeric(cleaned, errors='ignore')
+
+    # Remove duplicates
+    df = df.drop_duplicates()
+
+    return df
+
+
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="Advanced Data Dashboard", layout="wide")
-
 st.title("📊 Advanced Data Explorer")
 
 # ---------------- FILE UPLOAD ----------------
@@ -29,35 +60,35 @@ if not file_names:
 
 # ---------------- SELECT FILE ----------------
 selected_file = st.sidebar.selectbox("Select File", file_names)
-df = st.session_state.files[selected_file]
+raw_df = st.session_state.files[selected_file]
 
-# ---------------- CLEANED DF ----------------
-if "cleaned_df" not in st.session_state:
-    st.session_state.cleaned_df = df.copy()
+# ---------------- CLEAN DATA ----------------
+if "cleaned_df" not in st.session_state or st.session_state.get("last_file") != selected_file:
+    st.session_state.cleaned_df = clean_data(raw_df)
+    st.session_state.last_file = selected_file
+
+df = st.session_state.cleaned_df
 
 st.sidebar.success(f"Active File: {selected_file}")
 
-# ---------------- FILTERS ----------------
+# ---------------- SEARCH FILTER ----------------
 search = st.sidebar.text_input("Search")
 
 if search:
     df = df[df.astype(str).apply(lambda x: x.str.contains(search, case=False).any(), axis=1)]
 
-for col in df.select_dtypes(include='object').columns:
-    vals = st.sidebar.multiselect(col, df[col].dropna().unique())
-    if vals:
-        df = df[df[col].isin(vals)]
-
 # ---------------- TABS ----------------
 tabs = st.tabs([
     "📊 Overview", "🗂 Schema", "📈 Stats", "📋 Preview",
-    "📉 Charts", "🧹 Data Quality", "📊 Advanced", "📤 Export"
+    "📉 Charts", "🧹 Data Report", "📊 Advanced", "📤 Export"
 ])
 
 # ---------------- OVERVIEW ----------------
 with tabs[0]:
-    st.metric("Rows", df.shape[0])
-    st.metric("Columns", df.shape[1])
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Rows", df.shape[0])
+    c2.metric("Columns", df.shape[1])
+    c3.metric("Missing Values", df.isnull().sum().sum())
 
 # ---------------- SCHEMA ----------------
 with tabs[1]:
@@ -76,93 +107,66 @@ with tabs[2]:
 with tabs[3]:
     st.dataframe(df)
 
-# ---------------- DATA QUALITY ----------------
-with tabs[5]:
-    st.subheader("Data Cleaning")
-
-    working_df = st.session_state.cleaned_df
-
-    st.write("Missing Values")
-    st.write(working_df.isnull().sum())
-
-    empty_cols = working_df.columns[working_df.isnull().all()].tolist()
-    st.write("Empty Columns:", empty_cols)
-
-    if st.button("Drop Empty Columns"):
-        st.session_state.cleaned_df = working_df.drop(columns=empty_cols)
-        st.rerun()
-
-    dup = working_df.duplicated().sum()
-    st.write(f"Duplicates: {dup}")
-
-    if st.button("Remove Duplicates"):
-        st.session_state.cleaned_df = working_df.drop_duplicates()
-        st.rerun()
-
 # ---------------- CHARTS ----------------
 with tabs[4]:
     st.subheader("Charts")
 
-    clean_df = st.session_state.cleaned_df.copy()
-
-    # Convert numeric
-    for col in clean_df.columns:
-        if clean_df[col].dtype == "object":
-            clean_df[col] = pd.to_numeric(
-                clean_df[col].astype(str).str.replace(r"[^\d.]", "", regex=True),
-                errors="coerce"
-            )
-
-    num_cols = clean_df.select_dtypes(include='number').columns.tolist()
+    num_cols = df.select_dtypes(include='number').columns.tolist()
 
     if num_cols:
         selected_col = st.selectbox("Select Column", num_cols)
 
-        clean_df = clean_df.dropna(subset=[selected_col])
+        temp = df.dropna(subset=[selected_col])
 
-        st.metric("Total", f"{clean_df[selected_col].sum():,.0f}")
+        st.metric("Total", f"{temp[selected_col].sum():,.0f}")
 
-        st.plotly_chart(px.histogram(clean_df, x=selected_col))
-        st.plotly_chart(px.box(clean_df, y=selected_col))
+        st.plotly_chart(px.histogram(temp, x=selected_col), use_container_width=True)
+        st.plotly_chart(px.box(temp, y=selected_col), use_container_width=True)
+    else:
+        st.warning("No numeric columns available")
+
+# ---------------- DATA REPORT ----------------
+with tabs[5]:
+    st.subheader("🧹 Data Cleaning Summary")
+
+    c1, c2, c3 = st.columns(3)
+
+    c1.metric("Original Rows", raw_df.shape[0])
+    c2.metric("Cleaned Rows", df.shape[0])
+    c3.metric("Columns Removed", raw_df.shape[1] - df.shape[1])
+
+    st.write("Missing Values After Cleaning")
+    st.write(df.isnull().sum())
 
 # ---------------- ADVANCED ----------------
 with tabs[6]:
     st.subheader("Advanced Analysis")
 
-    adv_df = st.session_state.cleaned_df.copy()
-
-    for col in adv_df.columns:
-        if adv_df[col].dtype == "object":
-            adv_df[col] = pd.to_numeric(
-                adv_df[col].astype(str).str.replace(r"[^\d.]", "", regex=True),
-                errors="coerce"
-            )
-
-    num_cols = adv_df.select_dtypes(include='number').columns.tolist()
+    num_cols = df.select_dtypes(include='number').columns.tolist()
 
     if num_cols:
         selected_col = st.selectbox("Column for Analysis", num_cols)
 
-        adv_df = adv_df.dropna(subset=[selected_col])
+        temp = df.dropna(subset=[selected_col])
 
-        st.write(adv_df[selected_col].describe())
+        st.write(temp[selected_col].describe())
 
         # Outliers
-        q1 = adv_df[selected_col].quantile(0.25)
-        q3 = adv_df[selected_col].quantile(0.75)
+        q1 = temp[selected_col].quantile(0.25)
+        q3 = temp[selected_col].quantile(0.75)
         iqr = q3 - q1
 
-        outliers = adv_df[
-            (adv_df[selected_col] < q1 - 1.5 * iqr) |
-            (adv_df[selected_col] > q3 + 1.5 * iqr)
+        outliers = temp[
+            (temp[selected_col] < q1 - 1.5 * iqr) |
+            (temp[selected_col] > q3 + 1.5 * iqr)
         ]
 
         st.write(f"Outliers: {len(outliers)}")
 
-        # Correlation Heatmap
-        st.markdown("### Correlation Heatmap")
-
+        # Heatmap
         if len(num_cols) >= 2:
+            st.markdown("### Correlation Heatmap")
+
             selected_cols = st.multiselect(
                 "Select columns",
                 num_cols,
@@ -170,7 +174,7 @@ with tabs[6]:
             )
 
             if len(selected_cols) >= 2:
-                corr = adv_df[selected_cols].corr()
+                corr = df[selected_cols].corr()
 
                 fig, ax = plt.subplots(figsize=(8, 5))
                 sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
@@ -178,17 +182,15 @@ with tabs[6]:
 
 # ---------------- EXPORT ----------------
 with tabs[7]:
-    st.subheader("Export Data")
+    st.subheader("Export Cleaned Data")
 
-    export_df = st.session_state.cleaned_df
-
-    st.dataframe(export_df.head())
+    st.dataframe(df.head())
 
     file_format = st.selectbox("Format", ["CSV", "Excel"])
     file_name = st.text_input("File Name", "clean_data")
 
     if file_format == "CSV":
-        data = export_df.to_csv(index=False).encode("utf-8")
+        data = df.to_csv(index=False).encode("utf-8")
         st.download_button("Download CSV", data, f"{file_name}.csv")
 
     else:
@@ -196,6 +198,6 @@ with tabs[7]:
         buffer = BytesIO()
 
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            export_df.to_excel(writer, index=False)
+            df.to_excel(writer, index=False)
 
         st.download_button("Download Excel", buffer.getvalue(), f"{file_name}.xlsx")
