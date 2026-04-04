@@ -106,88 +106,108 @@ with tabs[2]:
 with tabs[3]:
     st.dataframe(df, use_container_width=True)
 
+# ---------------- CHARTS ----------------
 with tabs[4]:
     st.subheader("📊 Business Insights Dashboard")
 
-    # Convert date
+    # Convert date safely
     if "Close Date" in df.columns:
         df["Close Date"] = pd.to_datetime(df["Close Date"], errors='coerce')
 
     # 1. Contract Distribution
     if "CONTRACT AMOUNT" in df.columns:
         st.subheader("💰 How Big Are Our Deals?")
-        fig1 = px.histogram(
-    df,
-    x="CONTRACT AMOUNT",
-    nbins=30,
-    title="Distribution of Contract Amount (Deal Size)"
-)
 
-fig1.update_layout(
-    xaxis_title="Contract Amount",
-    yaxis_title="Number of Deals"
-)
+        fig1 = px.histogram(
+            df,
+            x="CONTRACT AMOUNT",
+            nbins=30,
+            title="Distribution of Contract Amount (Deal Size)"
+        )
+
+        fig1.update_layout(
+            xaxis_title="Contract Amount",
+            yaxis_title="Number of Deals"
+        )
+
+        st.plotly_chart(fig1, use_container_width=True)
 
     # 2. Owner Performance
-if "Opportunity Owner_Name" in df.columns:
+    if "Opportunity Owner_Name" in df.columns:
         st.subheader("👩‍💼 Who Handles Most Opportunities?")
+
         top_owner = df["Opportunity Owner_Name"].value_counts().head(10)
 
-        fig2 = px.bar(x=top_owner.index, y=top_owner.values,
-                      title="Top 10 Opportunity Owners")
+        fig2 = px.bar(
+            x=top_owner.index,
+            y=top_owner.values,
+            title="Top 10 Opportunity Owners"
+        )
+
+        fig2.update_layout(
+            xaxis_title="Owner Name",
+            yaxis_title="Number of Opportunities"
+        )
+
         st.plotly_chart(fig2, use_container_width=True)
 
     # 3. Business Type
-if "B2C / B2B__" in df.columns:
+    if "B2C / B2B__" in df.columns:
         st.subheader("🏢 Business Type Split")
-        fig3 = px.pie(df, names="B2C / B2B__", title="B2B vs B2C")
+
+        fig3 = px.pie(
+            df,
+            names="B2C / B2B__",
+            title="B2B vs B2C Distribution"
+        )
+
         st.plotly_chart(fig3, use_container_width=True)
 
-    # 4. Revenue Trend (FIXED + CLEAN)
-if "Close Date" in df.columns and "CONTRACT AMOUNT" in df.columns:
-    st.subheader("📈 Monthly Revenue Trend (Clean View)")
+    # 4. Revenue Trend (FIXED)
+    if "Close Date" in df.columns and "CONTRACT AMOUNT" in df.columns:
+        st.subheader("📈 Monthly Revenue Trend (Clean View)")
 
-    # Step 1: Clean data
-    df["Close Date"] = pd.to_datetime(df["Close Date"], errors='coerce')
-    df["CONTRACT AMOUNT"] = pd.to_numeric(df["CONTRACT AMOUNT"], errors='coerce')
+        df["CONTRACT AMOUNT"] = pd.to_numeric(df["CONTRACT AMOUNT"], errors='coerce')
+        clean_df = df.dropna(subset=["Close Date", "CONTRACT AMOUNT"])
 
-    clean_df = df.dropna(subset=["Close Date", "CONTRACT AMOUNT"])
+        if not clean_df.empty:
 
-    if not clean_df.empty:
+            trend = clean_df.groupby(
+                clean_df["Close Date"].dt.to_period("M")
+            )["CONTRACT AMOUNT"].sum().reset_index()
 
-        # Step 2: Group by month
-        trend = clean_df.groupby(
-            clean_df["Close Date"].dt.to_period("M")
-        )["CONTRACT AMOUNT"].sum().reset_index()
+            trend["Close Date"] = trend["Close Date"].astype(str)
+            trend = trend.sort_values("Close Date").tail(12)
 
-        # Step 3: Convert + sort
-        trend["Close Date"] = trend["Close Date"].astype(str)
-        trend = trend.sort_values("Close Date")
+            fig4 = px.line(
+                trend,
+                x="Close Date",
+                y="CONTRACT AMOUNT",
+                markers=True,
+                title="Total Contract Value per Month"
+            )
 
-        # Step 4: Show only last 12 months (VERY IMPORTANT)
-        trend = trend.tail(12)
+            fig4.update_layout(
+                xaxis_title="Month (Close Date)",
+                yaxis_title="Total Contract Amount"
+            )
 
-        # Step 5: Plot
-        fig4 = px.line(
-            trend,
-            x="Close Date",
+            st.plotly_chart(fig4, use_container_width=True)
+
+        else:
+            st.warning("No valid data for revenue trend")
+
+    # 5. Outliers
+    if "CONTRACT AMOUNT" in df.columns:
+        st.subheader("⚠️ Outlier Detection")
+
+        fig5 = px.box(
+            df,
             y="CONTRACT AMOUNT",
-            markers=True,
-            title="Total Contract Value per Month"
+            title="Outliers in Contract Amount"
         )
 
-        # Step 6: Improve readability
-        fig4.update_layout(
-            xaxis_title="Month (Close Date)",
-            yaxis_title="Total Contract Amount",
-            title_x=0.3
-        )
-
-        st.plotly_chart(fig4, use_container_width=True)
-
-    else:
-        st.warning("No valid data for revenue trend")
-
+        st.plotly_chart(fig5, use_container_width=True)
 
 # ---------------- ADVANCED VISUALS ----------------
 with tabs[6]:
