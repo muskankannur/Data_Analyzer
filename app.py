@@ -18,7 +18,6 @@ uploaded_files = st.sidebar.file_uploader(
 if "files" not in st.session_state:
     st.session_state.files = {}
 
-# Store files
 for file in uploaded_files:
     if file.name not in st.session_state.files:
         st.session_state.files[file.name] = pd.read_csv(file)
@@ -49,7 +48,6 @@ for col in df.select_dtypes(include='object').columns:
     if vals:
         df = df[df[col].isin(vals)]
 
-# Sorting
 sort_col = st.sidebar.selectbox("Sort By", df.columns)
 df = df.sort_values(by=sort_col)
 
@@ -78,188 +76,81 @@ with tabs[1]:
         "Non-Null": df.count(),
         "Null": df.isnull().sum()
     })
-
-    def highlight(val):
-        if "int" in val or "float" in val:
-            return "background-color: lightgreen"
-        elif "object" in val:
-            return "background-color: lightblue"
-        else:
-            return ""
-
-    st.dataframe(schema.style.applymap(highlight, subset=["Type"]))
+    st.dataframe(schema)
 
 # ---------------- STATS ----------------
 with tabs[2]:
-    st.subheader("Numeric Summary")
     st.write(df.describe())
-
-    st.subheader("Top Categorical Values")
-    for col in df.select_dtypes(include='object').columns:
-        st.write(f"**{col}**")
-        st.write(df[col].value_counts().head())
-
-    st.subheader("Missing %")
-    st.write((df.isnull().sum() / len(df)) * 100)
 
 # ---------------- PREVIEW ----------------
 with tabs[3]:
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df)
 
 # ---------------- CHARTS ----------------
 with tabs[4]:
     st.subheader("📊 Business Insights Dashboard")
 
-    # Convert date safely
+    # Clean data ONCE
     if "Close Date" in df.columns:
         df["Close Date"] = pd.to_datetime(df["Close Date"], errors='coerce')
 
-    # 1. Contract Distribution
     if "CONTRACT AMOUNT" in df.columns:
-        st.subheader("💰 How Big Are Our Deals?")
-
-        fig1 = px.histogram(
-            df,
-            x="CONTRACT AMOUNT",
-            nbins=30,
-            title="Distribution of Contract Amount (Deal Size)"
+        df["CONTRACT AMOUNT"] = (
+            df["CONTRACT AMOUNT"]
+            .astype(str)
+            .str.replace("$", "", regex=False)
+            .str.replace(",", "", regex=False)
         )
+        df["CONTRACT AMOUNT"] = pd.to_numeric(df["CONTRACT AMOUNT"], errors='coerce')
 
-        fig1.update_layout(
-            xaxis_title="Contract Amount",
-            yaxis_title="Number of Deals"
-        )
+    # 1. Histogram
+    if "CONTRACT AMOUNT" in df.columns:
+        fig1 = px.histogram(df, x="CONTRACT AMOUNT", title="Contract Amount Distribution")
+        st.plotly_chart(fig1)
 
-        st.plotly_chart(fig1, use_container_width=True)
-
-    # 2. Owner Performance
+    # 2. Owner chart
     if "Opportunity Owner_Name" in df.columns:
-        st.subheader("👩‍💼 Who Handles Most Opportunities?")
-
         top_owner = df["Opportunity Owner_Name"].value_counts().head(10)
+        fig2 = px.bar(x=top_owner.index, y=top_owner.values, title="Top Owners")
+        st.plotly_chart(fig2)
 
-        fig2 = px.bar(
-            x=top_owner.index,
-            y=top_owner.values,
-            title="Top 10 Opportunity Owners"
-        )
-
-        fig2.update_layout(
-            xaxis_title="Owner Name",
-            yaxis_title="Number of Opportunities"
-        )
-
-        st.plotly_chart(fig2, use_container_width=True)
-
-    # 3. Business Type
+    # 3. Pie
     if "B2C / B2B__" in df.columns:
-        st.subheader("🏢 Business Type Split")
+        fig3 = px.pie(df, names="B2C / B2B__", title="B2B vs B2C")
+        st.plotly_chart(fig3)
 
-        fig3 = px.pie(
-            df,
-            names="B2C / B2B__",
-            title="B2B vs B2C Distribution"
-        )
+    # 4. Revenue Trend (FIXED)
+    if "Close Date" in df.columns and "CONTRACT AMOUNT" in df.columns:
 
-        st.plotly_chart(fig3, use_container_width=True)
+        clean_df = df.dropna(subset=["Close Date", "CONTRACT AMOUNT"])
 
-    # 4. Revenue Trend (FIXED + DEBUG)
-if "Close Date" in df.columns and "CONTRACT AMOUNT" in df.columns:
-    st.subheader("📈 Monthly Revenue Trend (Clean View)")
+        if not clean_df.empty:
+            trend = clean_df.groupby(
+                clean_df["Close Date"].dt.to_period("M")
+            )["CONTRACT AMOUNT"].sum().reset_index()
 
-    # 🔍 DEBUG BEFORE CLEANING
-    st.write("Raw Data Shape:", df.shape)
-    st.write("Sample Contract Amount:", df["CONTRACT AMOUNT"].head())
+            trend["Close Date"] = trend["Close Date"].astype(str)
 
-    # ✅ Clean Close Date
-    df["Close Date"] = pd.to_datetime(df["Close Date"], errors='coerce')
+            fig4 = px.line(
+                trend.tail(12),
+                x="Close Date",
+                y="CONTRACT AMOUNT",
+                markers=True,
+                title="Monthly Revenue Trend"
+            )
 
-    # ✅ CLEAN CONTRACT AMOUNT (REAL FIX)
-    df["CONTRACT AMOUNT"] = (
-        df["CONTRACT AMOUNT"]
-        .astype(str)
-        .str.replace("$", "", regex=False)
-        .str.replace(",", "", regex=False)
-    )
+            st.plotly_chart(fig4)
 
-    df["CONTRACT AMOUNT"] = pd.to_numeric(df["CONTRACT AMOUNT"], errors='coerce')
-
-    # 🔍 DEBUG AFTER CLEANING
-    st.write("Null Close Date:", df["Close Date"].isna().sum())
-    st.write("Null Contract Amount:", df["CONTRACT AMOUNT"].isna().sum())
-
-    # Drop invalid rows
-    clean_df = df.dropna(subset=["Close Date", "CONTRACT AMOUNT"])
-
-    st.write("Clean Data Shape:", clean_df.shape)
-
-    if not clean_df.empty:
-
-        # Group monthly
-        trend = clean_df.groupby(
-            clean_df["Close Date"].dt.to_period("M")
-        )["CONTRACT AMOUNT"].sum().reset_index()
-
-        trend["Close Date"] = trend["Close Date"].astype(str)
-        trend = trend.sort_values("Close Date").tail(12)
-
-        fig4 = px.line(
-            trend,
-            x="Close Date",
-            y="CONTRACT AMOUNT",
-            markers=True,
-            title="Total Contract Value per Month"
-        )
-
-        fig4.update_layout(
-            xaxis_title="Month (Close Date)",
-            yaxis_title="Total Contract Amount"
-        )
-
-        st.plotly_chart(fig4, use_container_width=True)
-
-    else:
-        st.error("🚨 No valid data after cleaning — check your dataset")
-# ---------------- ADVANCED VISUALS ----------------
+# ---------------- ADVANCED ----------------
 with tabs[6]:
-    st.subheader("📊 Advanced Data Analysis")
+    st.subheader("Advanced Analysis")
 
-    # DEFINE numeric columns (FIX)
     num_cols = df.select_dtypes(include='number').columns
 
-    # -------- 1. MISSING VALUE HEATMAP --------
-    st.subheader("🧹 Missing Data Pattern")
-
-    fig, ax = plt.subplots()
-    sns.heatmap(df.isnull(), cbar=False)
-    ax.set_title("Missing Values Heatmap")
-    st.pyplot(fig)
-
-    # -------- 2. CORRELATION MATRIX --------
-    st.subheader("🔗 Relationship Between Numeric Features")
-
-    if len(num_cols) > 1:
-        fig, ax = plt.subplots()
-        sns.heatmap(df[num_cols].corr(), annot=True, cmap="coolwarm")
-        ax.set_title("Correlation Matrix")
-        st.pyplot(fig)
-    else:
-        st.warning("Not enough numeric columns for correlation")
-
-    # -------- 3. BOX PLOT (OUTLIERS) --------
-    st.subheader("⚠️ Detect Outliers")
-
     if len(num_cols) > 0:
-        col = st.selectbox("Select Column for Outlier Detection", num_cols)
-        fig = px.box(df, y=col, title=f"Outliers in {col}")
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.warning("No numeric columns available")
+        fig = px.box(df, y=num_cols[0])
+        st.plotly_chart(fig)
 
 # ---------------- EXPORT ----------------
 with tabs[7]:
-    schema_csv = schema.to_csv(index=False).encode()
-    stats_csv = df.describe().to_csv().encode()
-
-    st.download_button("Download Schema", schema_csv, "schema.csv")
-    st.download_button("Download Stats", stats_csv, "stats.csv")
+    st.download_button("Download CSV", df.to_csv().encode(), "data.csv")
