@@ -157,23 +157,39 @@ with tabs[4]:
 
 # ---------------- ADVANCED VISUALS ----------------
 with tabs[6]:
-    st.subheader("Missing Value Heatmap")
+    st.subheader("📊 Advanced Data Analysis")
+
+    # DEFINE numeric columns (FIX)
+    num_cols = df.select_dtypes(include='number').columns
+
+    # -------- 1. MISSING VALUE HEATMAP --------
+    st.subheader("🧹 Missing Data Pattern")
+
     fig, ax = plt.subplots()
     sns.heatmap(df.isnull(), cbar=False)
+    ax.set_title("Missing Values Heatmap")
     st.pyplot(fig)
 
-    st.subheader("Correlation Matrix")
-    num_df = df.select_dtypes(include='number')
-    if not num_df.empty:
-        fig, ax = plt.subplots()
-        sns.heatmap(num_df.corr(), annot=True)
-        st.pyplot(fig)
+    # -------- 2. CORRELATION MATRIX --------
+    st.subheader("🔗 Relationship Between Numeric Features")
 
-    st.subheader("Box Plot")
+    if len(num_cols) > 1:
+        fig, ax = plt.subplots()
+        sns.heatmap(df[num_cols].corr(), annot=True, cmap="coolwarm")
+        ax.set_title("Correlation Matrix")
+        st.pyplot(fig)
+    else:
+        st.warning("Not enough numeric columns for correlation")
+
+    # -------- 3. BOX PLOT (OUTLIERS) --------
+    st.subheader("⚠️ Detect Outliers")
+
     if len(num_cols) > 0:
-        col = st.selectbox("Column for Box Plot", num_cols, key="box")
-        fig = px.box(df, y=col)
-        st.plotly_chart(fig)
+        col = st.selectbox("Select Column for Outlier Detection", num_cols)
+        fig = px.box(df, y=col, title=f"Outliers in {col}")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("No numeric columns available")
 
 # ---------------- EXPORT ----------------
 with tabs[7]:
