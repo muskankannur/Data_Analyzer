@@ -172,16 +172,48 @@ with tabs[4]:
                 fig3 = px.line(trend, x="Close Date", y=selected_col)
                 st.plotly_chart(fig3)
 
-# ---------------- ADVANCED ----------------
 with tabs[6]:
-    st.subheader("Advanced Analysis")
+    st.subheader("📊 Advanced Analysis")
 
-    num_cols = df.select_dtypes(include='number').columns
+    adv_df = st.session_state.cleaned_df.copy()
 
-    if len(num_cols) > 0:
-        fig = px.box(df, y=num_cols[0])
-        st.plotly_chart(fig)
+    # -------- CLEAN NUMERIC DATA --------
+    for col in adv_df.columns:
+        if adv_df[col].dtype == "object":
+            cleaned = adv_df[col].astype(str).str.replace(r"[^\d.]", "", regex=True)
+            adv_df[col] = pd.to_numeric(cleaned, errors="coerce")
 
-# ---------------- EXPORT ----------------
-with tabs[7]:
-    st.download_button("Download CSV", st.session_state.cleaned_df.to_csv().encode(), "clean_data.csv")
+    # -------- SELECT NUMERIC COLUMNS --------
+    num_cols = adv_df.select_dtypes(include='number').columns.tolist()
+
+    if not num_cols:
+        st.error("No numeric columns available for advanced analysis")
+    else:
+        selected_col = st.selectbox("Select Column for Advanced Analysis", num_cols)
+
+        # Drop nulls only for selected column
+        adv_df = adv_df.dropna(subset=[selected_col])
+
+        if adv_df.empty:
+            st.error("No valid data after cleaning")
+        else:
+            st.metric("Average", f"{adv_df[selected_col].mean():,.2f}")
+            st.metric("Max", f"{adv_df[selected_col].max():,.2f}")
+
+            # Box plot
+            fig1 = px.box(adv_df, y=selected_col, title="Outlier Detection")
+            st.plotly_chart(fig1)
+
+            # Histogram
+            fig2 = px.histogram(adv_df, x=selected_col, title="Distribution")
+            st.plotly_chart(fig2)
+
+            # Correlation (if multiple numeric columns)
+            if len(num_cols) > 1:
+                st.subheader("Correlation Heatmap")
+
+                corr = adv_df[num_cols].corr()
+
+                fig3, ax = plt.subplots()
+                sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
+                st.pyplot(fig3)
