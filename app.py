@@ -34,6 +34,10 @@ if not file_names:
 selected_file = st.sidebar.selectbox("Select File", file_names)
 df = st.session_state.files[selected_file]
 
+# ---------------- CLEANED DF STATE ----------------
+if "cleaned_df" not in st.session_state:
+    st.session_state.cleaned_df = df.copy()
+
 st.sidebar.success(f"Active File: {selected_file}")
 
 # ---------------- SEARCH + FILTER ----------------
@@ -86,60 +90,87 @@ with tabs[2]:
 with tabs[3]:
     st.dataframe(df)
 
+# ---------------- DATA QUALITY ----------------
+with tabs[5]:
+    st.subheader("🧹 Data Quality Analysis")
+
+    working_df = st.session_state.cleaned_df
+
+    # Missing Values
+    st.markdown("### Missing Values")
+    st.write(working_df.isnull().sum())
+
+    # Empty Columns
+    empty_cols = working_df.columns[working_df.isnull().all()].tolist()
+    st.markdown("### Empty Columns")
+    st.write(empty_cols)
+
+    if st.button("Drop Empty Columns"):
+        working_df = working_df.drop(columns=empty_cols)
+        st.session_state.cleaned_df = working_df
+        st.success("Empty columns removed")
+
+    # Duplicates
+    st.markdown("### Duplicate Rows")
+    dup_count = working_df.duplicated().sum()
+    st.write(f"Total Duplicates: {dup_count}")
+
+    if st.button("Remove Duplicates"):
+        working_df = working_df.drop_duplicates()
+        st.session_state.cleaned_df = working_df
+        st.success("Duplicates removed")
+
 # ---------------- CHARTS ----------------
 with tabs[4]:
     st.subheader("📊 Business Insights Dashboard")
 
-    # Clean data ONCE
-    if "Close Date" in df.columns:
-        df["Close Date"] = pd.to_datetime(df["Close Date"], errors='coerce')
+    clean_df = st.session_state.cleaned_df.copy()
 
-    if "CONTRACT AMOUNT" in df.columns:
-        df["CONTRACT AMOUNT"] = (
-            df["CONTRACT AMOUNT"]
-            .astype(str)
-            .str.replace("$", "", regex=False)
-            .str.replace(",", "", regex=False)
-        )
-        df["CONTRACT AMOUNT"] = pd.to_numeric(df["CONTRACT AMOUNT"], errors='coerce')
+    # Date cleaning
+    if "Close Date" in clean_df.columns:
+        clean_df["Close Date"] = pd.to_datetime(clean_df["Close Date"], errors='coerce')
 
-    # 1. Histogram
-    if "CONTRACT AMOUNT" in df.columns:
-        fig1 = px.histogram(df, x="CONTRACT AMOUNT", title="Contract Amount Distribution")
-        st.plotly_chart(fig1)
+    # Numeric cleaning
+    for col in clean_df.columns:
+        if clean_df[col].dtype == "object":
+            cleaned = clean_df[col].astype(str).str.replace(r"[^\d.]", "", regex=True)
+            clean_df[col] = pd.to_numeric(cleaned, errors="coerce")
 
-    # 2. Owner chart
-    if "Opportunity Owner_Name" in df.columns:
-        top_owner = df["Opportunity Owner_Name"].value_counts().head(10)
-        fig2 = px.bar(x=top_owner.index, y=top_owner.values, title="Top Owners")
-        st.plotly_chart(fig2)
+    # Select numeric column
+    num_cols = clean_df.select_dtypes(include='number').columns.tolist()
 
-    # 3. Pie
-    if "B2C / B2B__" in df.columns:
-        fig3 = px.pie(df, names="B2C / B2B__", title="B2B vs B2C")
-        st.plotly_chart(fig3)
+    if not num_cols:
+        st.error("No numeric columns found")
+    else:
+        selected_col = st.selectbox("Select Column", num_cols)
 
-    # 4. Revenue Trend (FIXED)
-    if "Close Date" in df.columns and "CONTRACT AMOUNT" in df.columns:
+        # Drop only necessary nulls
+        required_cols = [selected_col]
+        if "Close Date" in clean_df.columns:
+            required_cols.append("Close Date")
 
-        clean_df = df.dropna(subset=["Close Date", "CONTRACT AMOUNT"])
+        clean_df = clean_df.dropna(subset=required_cols)
 
-        if not clean_df.empty:
-            trend = clean_df.groupby(
-                clean_df["Close Date"].dt.to_period("M")
-            )["CONTRACT AMOUNT"].sum().reset_index()
+        if clean_df.empty:
+            st.error("No valid data after cleaning")
+        else:
+            st.metric("Total", f"{clean_df[selected_col].sum():,.0f}")
 
-            trend["Close Date"] = trend["Close Date"].astype(str)
+            fig1 = px.histogram(clean_df, x=selected_col)
+            st.plotly_chart(fig1)
 
-            fig4 = px.line(
-                trend.tail(12),
-                x="Close Date",
-                y="CONTRACT AMOUNT",
-                markers=True,
-                title="Monthly Revenue Trend"
-            )
+            fig2 = px.box(clean_df, y=selected_col)
+            st.plotly_chart(fig2)
 
-            st.plotly_chart(fig4)
+            if "Close Date" in clean_df.columns:
+                trend = clean_df.groupby(
+                    clean_df["Close Date"].dt.to_period("M")
+                )[selected_col].sum().reset_index()
+
+                trend["Close Date"] = trend["Close Date"].astype(str)
+
+                fig3 = px.line(trend, x="Close Date", y=selected_col)
+                st.plotly_chart(fig3)
 
 # ---------------- ADVANCED ----------------
 with tabs[6]:
@@ -153,4 +184,4 @@ with tabs[6]:
 
 # ---------------- EXPORT ----------------
 with tabs[7]:
-    st.download_button("Download CSV", df.to_csv().encode(), "data.csv")
+    st.download_button("Download CSV", st.session_state.cleaned_df.to_csv().encode(), "clean_data.csv")
