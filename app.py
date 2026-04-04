@@ -208,12 +208,35 @@ with tabs[6]:
             fig2 = px.histogram(adv_df, x=selected_col, title="Distribution")
             st.plotly_chart(fig2)
 
-            # Correlation (if multiple numeric columns)
-            if len(num_cols) > 1:
-                st.subheader("Correlation Heatmap")
+            # Correlation Heatmap (Improved)
+if len(num_cols) > 1:
 
-                corr = adv_df[num_cols].corr()
+    st.subheader("Correlation Heatmap (Cleaned)")
 
-                fig3, ax = plt.subplots()
-                sns.heatmap(corr, annot=True, cmap="coolwarm", ax=ax)
-                st.pyplot(fig3)
+    # Limit columns (top 8 numeric only)
+    selected_cols = st.multiselect(
+        "Select columns for correlation",
+        num_cols,
+        default=num_cols[:5]
+    )
+
+    if len(selected_cols) < 2:
+        st.warning("Select at least 2 columns")
+    else:
+        corr = adv_df[selected_cols].corr()
+
+        fig, ax = plt.subplots(figsize=(8, 5))
+
+        sns.heatmap(
+            corr,
+            annot=True,
+            fmt=".2f",
+            cmap="coolwarm",
+            linewidths=0.5,
+            ax=ax
+        )
+
+        plt.xticks(rotation=45, ha='right')
+        plt.yticks(rotation=0)
+
+        st.pyplot(fig)
