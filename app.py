@@ -106,101 +106,54 @@ with tabs[2]:
 with tabs[3]:
     st.dataframe(df, use_container_width=True)
 
-# ---------------- BASIC CHARTS ----------------
 with tabs[4]:
-    num_cols = df.select_dtypes(include='number').columns
-    cat_cols = df.select_dtypes(include='object').columns
-
-    if len(num_cols) > 0:
-        col = st.selectbox("Numeric Column", num_cols)
-        fig = px.histogram(df, x=col)
-        st.plotly_chart(fig, use_container_width=True)
-
-    if len(cat_cols) > 0:
-        col = st.selectbox("Categorical Column", cat_cols, key="cat")
-        top = df[col].value_counts().head(10)
-        fig = px.bar(x=top.index, y=top.values)
-        st.plotly_chart(fig, use_container_width=True)
-
-# ---------------- TAB 5: CHARTS ----------------
-with tab5:
     st.subheader("📊 Business Insights Dashboard")
 
-    # Ensure date conversion (important for trend)
+    # Convert date
     if "Close Date" in df.columns:
         df["Close Date"] = pd.to_datetime(df["Close Date"], errors='coerce')
 
-    # -------- 1. CONTRACT AMOUNT DISTRIBUTION --------
+    # 1. Contract Distribution
     if "CONTRACT AMOUNT" in df.columns:
         st.subheader("💰 How Big Are Our Deals?")
-        fig1 = px.histogram(
-            df,
-            x="CONTRACT AMOUNT",
-            nbins=30,
-            title="Distribution of Contract Amount"
-        )
-        fig1.update_layout(
-            xaxis_title="Contract Amount",
-            yaxis_title="Number of Deals"
-        )
+        fig1 = px.histogram(df, x="CONTRACT AMOUNT", nbins=30,
+                            title="Distribution of Contract Amount")
         st.plotly_chart(fig1, use_container_width=True)
 
-    # -------- 2. TOP OPPORTUNITY OWNERS --------
+    # 2. Owner Performance
     if "Opportunity Owner_Name" in df.columns:
         st.subheader("👩‍💼 Who Handles Most Opportunities?")
         top_owner = df["Opportunity Owner_Name"].value_counts().head(10)
 
-        fig2 = px.bar(
-            x=top_owner.index,
-            y=top_owner.values,
-            title="Top 10 Opportunity Owners"
-        )
-        fig2.update_layout(
-            xaxis_title="Owner",
-            yaxis_title="Number of Opportunities"
-        )
+        fig2 = px.bar(x=top_owner.index, y=top_owner.values,
+                      title="Top 10 Opportunity Owners")
         st.plotly_chart(fig2, use_container_width=True)
 
-    # -------- 3. BUSINESS TYPE SPLIT --------
+    # 3. Business Type
     if "B2C / B2B__" in df.columns:
-        st.subheader("🏢 Business Type Distribution")
-
-        fig3 = px.pie(
-            df,
-            names="B2C / B2B__",
-            title="B2B vs B2C Split"
-        )
+        st.subheader("🏢 Business Type Split")
+        fig3 = px.pie(df, names="B2C / B2B__", title="B2B vs B2C")
         st.plotly_chart(fig3, use_container_width=True)
 
-    # -------- 4. REVENUE TREND --------
+    # 4. Revenue Trend
     if "Close Date" in df.columns and "CONTRACT AMOUNT" in df.columns:
-        st.subheader("📈 Monthly Revenue Trend")
+        st.subheader("📈 Revenue Trend")
 
-        trend = df.groupby(df["Close Date"].dt.to_period("M"))["CONTRACT AMOUNT"].sum()
-        trend = trend.reset_index()
+        trend = df.groupby(df["Close Date"].dt.to_period("M"))["CONTRACT AMOUNT"].sum().reset_index()
         trend["Close Date"] = trend["Close Date"].astype(str)
 
-        fig4 = px.line(
-            trend,
-            x="Close Date",
-            y="CONTRACT AMOUNT",
-            title="Revenue Trend Over Time"
-        )
-        fig4.update_layout(
-            xaxis_title="Month",
-            yaxis_title="Total Revenue"
-        )
+        fig4 = px.line(trend, x="Close Date", y="CONTRACT AMOUNT",
+                       title="Monthly Revenue Trend")
         st.plotly_chart(fig4, use_container_width=True)
 
-    # -------- 5. OUTLIER DETECTION --------
+    # 5. Outliers
     if "CONTRACT AMOUNT" in df.columns:
-        st.subheader("⚠️ Are There Unusually Large Deals?")
-        fig5 = px.box(
-            df,
-            y="CONTRACT AMOUNT",
-            title="Outlier Detection in Contract Amount"
-        )
+        st.subheader("⚠️ Outlier Detection")
+        fig5 = px.box(df, y="CONTRACT AMOUNT",
+                      title="Outliers in Contract Amount")
         st.plotly_chart(fig5, use_container_width=True)
+
+
 
 # ---------------- ADVANCED VISUALS ----------------
 with tabs[6]:
