@@ -202,6 +202,7 @@ with tabs[7]:
     else:
         from io import BytesIO
         buffer = BytesIO()
+    
 
         with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
             df.to_excel(writer, index=False)
